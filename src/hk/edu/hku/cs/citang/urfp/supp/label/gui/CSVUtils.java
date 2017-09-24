@@ -56,7 +56,6 @@ public class CSVUtils {
             first = false;
         }
         sb.append("\n");
-        System.out.print("A");
         w.append(sb.toString());
     }
     

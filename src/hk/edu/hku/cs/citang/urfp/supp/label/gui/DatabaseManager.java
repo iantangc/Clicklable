@@ -1,18 +1,12 @@
 package hk.edu.hku.cs.citang.urfp.supp.label.gui;
 
-import java.awt.Color;
 import java.awt.Point;
-import java.awt.Shape;
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.io.InputStream;
-import java.security.DigestInputStream;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -20,27 +14,30 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 
 public class DatabaseManager {
+    private static final String VERSION = "1.0";
+    
     private Connection connection;
     private String databasePath;
     
     private static char CSV_SEPARATOR = '|';
-    
     private static char CSV_QUOTE = '\'';
     private static String CSV_DOC_SEPERATOR = "/////";
     
+    
     private static final String FILE_SELECT_ALL = "SELECT * FROM files ORDER BY file_id ASC";
     private static final String FILE_COUNT_BY_PATH = "SELECT COUNT(*) FROM files WHERE path = ?";
-    private static final String FILE_SELECT_BY_PATH = "SELECT * FROM files WHERE path = ?";
-    private static final String FILE_SELECT_BY_NAME = "SELECT * FROM files WHERE name = ?";
-    private static final String FILE_SELECT_BY_HASH = "SELECT * FROM files WHERE hash = ?";
+    private static final String FILE_SELECT = "SELECT * FROM files";
+    private static final String FILE_SELECT_CONSTRAINT_PATH = " path = ?";
+    private static final String FILE_SELECT_CONSTRAINT_HASH = " hash = ?";
+    private static final String FILE_SELECT_CONSTRAINT_NAME = " name = ?";
+    private static final String FILE_SELECT_CONSTRAINT_ID = " file_id = ?";
     
     private static final String UPDATE_FILE = "UPDATE files SET name = ?, path = ?, hash = ? WHERE file_id = ?";
     private static final String INSERT_FILE = "INSERT INTO files(name, path, hash) VALUES (?,?,?)";
@@ -81,23 +78,36 @@ public class DatabaseManager {
 
         connection.setAutoCommit(false);
 
-        Statement sqlStmt = connection.createStatement();
-        
-        try {
-            sqlStmt.execute("CREATE TABLE files(file_id BIGINT NOT NULL primary key "
-                    + "GENERATED ALWAYS AS IDENTITY "
-                    + "(START WITH 1, INCREMENT BY 1), name VARCHAR(4096) NOT NULL,"
-                    + "path VARCHAR(4096) NOT NULL, hash VARCHAR(128) NOT NULL)");
+        String[] tableTypes = {"TABLE"};
+        ResultSet rs = connection.getMetaData().getTables(null, null, "FILES", tableTypes);
+        if (!rs.isBeforeFirst()){
+            Statement sqlStmt = connection.createStatement();
+            try {
+                sqlStmt.execute("CREATE TABLE FILES(file_id BIGINT NOT NULL primary key "
+                        + "GENERATED ALWAYS AS IDENTITY "
+                        + "(START WITH 1, INCREMENT BY 1), name VARCHAR(4096) NOT NULL,"
+                        + "path VARCHAR(4096) NOT NULL, hash VARCHAR(128) NOT NULL)");
 
-            sqlStmt.execute("CREATE TABLE labels(file_id BIGINT NOT NULL, "
-                    + "x_coor INT NOT NULL, y_coor INT NOT NULL, label INT NOT NULL, "
-                    + "FOREIGN KEY(file_id) REFERENCES files (file_id))");
-        } catch (SQLException e) {
-            System.out.println("Info: Database tables \"labels\" already exists.");
-        } finally {
-            sqlStmt.close();
+            } catch (SQLException e) {
+                e.printStackTrace();
+                //System.out.println("Info: Database table \"files\" already exists.");
+            } 
         }
-        
+
+        rs = connection.getMetaData().getTables(null, null, "LABELS", tableTypes);
+        if (!rs.isBeforeFirst()){
+            Statement sqlStmt = connection.createStatement();
+            try {
+                sqlStmt.execute("CREATE TABLE LABELS(file_id BIGINT NOT NULL, "
+                        + "x_coor INT NOT NULL, y_coor INT NOT NULL, label BIGINT NOT NULL, "
+                        + "FOREIGN KEY(file_id) REFERENCES files (file_id))");
+            } catch (SQLException e) {
+                e.printStackTrace();
+                //System.out.println("Info: Database table \"labels\" already exists.");
+            } finally {
+                sqlStmt.close();
+            }
+        }
         connection.commit();
     }
     
@@ -111,12 +121,61 @@ public class DatabaseManager {
         connection.close();
     }
     
-    public List<Long> getFileIDByPath(File chosenFile) throws SQLException{
-        PreparedStatement getFileByPathStm = connection.prepareStatement(FILE_SELECT_BY_PATH);
+    public File getFileByID(long file_id)throws SQLException{
+        String queryStm = FILE_SELECT + " WHERE" + FILE_SELECT_CONSTRAINT_ID;
+        PreparedStatement getFileByIDStm = connection.prepareStatement(queryStm);
+        
+        File result = null;
+        try {
+            getFileByIDStm.setString(1, String.valueOf(file_id));
+            ResultSet rs = getFileByIDStm.executeQuery();
+            try {
+                while (rs.next()){
+                    result = new File(rs.getString("path"));
+                }
+            } finally {
+                rs.close();
+            }
+        } finally {
+            getFileByIDStm.close();
+        }
+        return result;
+    }
+    
+    public List<Long> getFileIDByConstraints(File chosenFile, boolean pathConstraint, boolean hashConstraint, boolean nameConstraint)throws SQLException{
+        String queryStm = "";
+
+        if (pathConstraint){
+            queryStm += FILE_SELECT_CONSTRAINT_PATH + " AND";
+        }
+        if (hashConstraint){
+            queryStm += FILE_SELECT_CONSTRAINT_HASH + " AND";
+        }
+        if (nameConstraint){
+            queryStm += FILE_SELECT_CONSTRAINT_NAME + " AND";
+        }
+        if (pathConstraint || hashConstraint || nameConstraint){
+            queryStm = " WHERE" + queryStm;
+            queryStm = queryStm.substring(0, queryStm.length() - " AND".length());
+        }
+        PreparedStatement getFileByConstraintsStm = connection.prepareStatement(FILE_SELECT + queryStm);
+        
         List<Long> ids = new ArrayList<Long>();
         try {
-            getFileByPathStm.setString(1, chosenFile.getAbsolutePath());
-            ResultSet rs = getFileByPathStm.executeQuery();
+            int i = 1;
+            if (pathConstraint){
+                getFileByConstraintsStm.setString(i, chosenFile.getAbsolutePath());
+                i += 1;
+            }
+            if (hashConstraint){
+                getFileByConstraintsStm.setString(i, getSHA256(chosenFile));
+                i += 1;
+            }
+            if (nameConstraint){
+                getFileByConstraintsStm.setString(i, chosenFile.getName());
+                i += 1;
+            }
+            ResultSet rs = getFileByConstraintsStm.executeQuery();
             try {
                 while (rs.next()){
                     ids.add(rs.getLong("file_id"));
@@ -125,30 +184,30 @@ public class DatabaseManager {
                 rs.close();
             }
         } finally {
-            getFileByPathStm.close();
+            getFileByConstraintsStm.close();
         }
         return ids;
     }
     
-    public List<Long> getFileIDByHash(File chosenFile) throws SQLException{
-        PreparedStatement getFileIDByHashStm = connection.prepareStatement(FILE_SELECT_BY_HASH);
-        
-        List<Long> ids = new ArrayList<Long>();
-        try {
-            getFileIDByHashStm.setString(1, getSHA256(chosenFile));
-            ResultSet rs = getFileIDByHashStm.executeQuery();
-            try {
-                while (rs.next()){
-                    ids.add(rs.getLong("file_id"));
-                }
-            } finally {
-                rs.close();
-            }
-        } finally {
-            getFileIDByHashStm.close();
-        }
-        return ids;
-    }
+//    public List<Long> getFileIDByHash(File chosenFile) throws SQLException{
+//        PreparedStatement getFileIDByHashStm = connection.prepareStatement(FILE_SELECT_BY_HASH);
+//        
+//        List<Long> ids = new ArrayList<Long>();
+//        try {
+//            getFileIDByHashStm.setString(1, getSHA256(chosenFile));
+//            ResultSet rs = getFileIDByHashStm.executeQuery();
+//            try {
+//                while (rs.next()){
+//                    ids.add(rs.getLong("file_id"));
+//                }
+//            } finally {
+//                rs.close();
+//            }
+//        } finally {
+//            getFileIDByHashStm.close();
+//        }
+//        return ids;
+//    }
     
     public void updateFile(long fileID, File file) throws SQLException{
         PreparedStatement updateMessage = connection.prepareStatement(UPDATE_FILE);
@@ -195,16 +254,16 @@ public class DatabaseManager {
         }
     }
     
-    public HashMap<Point, Integer> getPointLabelsByFileID(Long file_id) throws SQLException{
+    public HashMap<Point, Long> getPointLabelsByFileID(Long file_id) throws SQLException{
         PreparedStatement getPointLabelStm = connection.prepareStatement(POINT_LABEL_SELECT_BY_ID);
         
-        HashMap<Point, Integer> plt = new HashMap<Point, Integer>();
+        HashMap<Point, Long> plt = new HashMap<Point, Long>();
         try {
             getPointLabelStm.setLong(1, file_id);
             ResultSet rs = getPointLabelStm.executeQuery();
             try {
                 while (rs.next()){
-                    plt.put(new Point(rs.getInt("x_coor"), rs.getInt("y_coor")), rs.getInt("label"));
+                    plt.put(new Point(rs.getInt("x_coor"), rs.getInt("y_coor")), rs.getLong("label"));
                 }
             } finally {
                 rs.close();
@@ -215,30 +274,51 @@ public class DatabaseManager {
         return plt;
     }
     
-    public boolean updatePointLabels(Long file_id, HashMap<Point, Integer> plt) throws SQLException{
+    public boolean updatePointLabels(Long file_id, HashMap<Point, Long> plt) throws SQLException{
         
         PreparedStatement deletePointLabelStm = connection.prepareStatement(DELETE_POINT_LABEL_BY_ID);
         deletePointLabelStm.setLong(1, file_id);
+
+
         
-        // TODO Fix 1000 limit
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<Point, Integer> entry : plt.entrySet()) {
-            sb.append("(" + file_id + "," + (int) (entry.getKey().getX()) + ", " + (int) (entry.getKey().getY()) + ", " + entry.getValue() + "), ");
-        }
-        String values = sb.toString();
-        
-        PreparedStatement insertPointLabelStm = connection.prepareStatement(INSERT_POINT_LABEL.replace("???", values.substring(0, values.length() - 2)));
         
 //        PreparedStatement updatePointLabelStm = connection.prepareStatement(MERGE_POINT_LABEL.replace("???", values.substring(0, values.length() - 2)));
         try {
             deletePointLabelStm.executeUpdate();
-            insertPointLabelStm.executeUpdate();
         } catch (Exception e) {
             e.printStackTrace();
             return false;
         } finally { // Notice use of finally clause here to finish statement
             deletePointLabelStm.close();
-            insertPointLabelStm.close();
+        }
+        
+        if (!plt.isEmpty()){
+            List<StringBuilder> sbs = new LinkedList<StringBuilder>();
+            int count = 0;
+            StringBuilder sb = new StringBuilder();
+            for (Map.Entry<Point, Long> entry : plt.entrySet()) {
+                if (count == 100){
+                    sbs.add(sb);
+                    sb = new StringBuilder();
+                    count = 0;
+                }
+                sb.append("(" + file_id + "," + (int) (entry.getKey().getX()) + ", " + (int) (entry.getKey().getY()) + ", " + entry.getValue() + "), ");
+                count += 1;
+            }
+            sbs.add(sb);
+            
+            for (StringBuilder s : sbs){
+                String values = s.toString();
+                PreparedStatement insertPointLabelStm = connection.prepareStatement(INSERT_POINT_LABEL.replace("???", values.substring(0, values.length() - 2)));
+                try {
+                    insertPointLabelStm.executeUpdate();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return false;
+                } finally {
+                    insertPointLabelStm.close();
+                }
+            }
         }
         connection.commit();
         
@@ -257,7 +337,7 @@ public class DatabaseManager {
             }
             byte[] hash = digest.digest();
             String encodedHash = bytesToHex(hash);
-            System.out.println(encodedHash);
+            //System.out.println(encodedHash);
             return encodedHash;
         } catch (Exception e) {
             e.printStackTrace();
@@ -274,7 +354,8 @@ public class DatabaseManager {
 
     public void databaseExportAsCSV(String filePath) throws IOException, SQLException{
         FileWriter writer = new FileWriter(filePath);
-        
+        writer.append("DBVERSION:" + VERSION + "\n");
+        writer.append(CSV_DOC_SEPERATOR + "\n");
         PreparedStatement getAllFileStm = connection.prepareStatement(FILE_SELECT_ALL);
         List<String> rowArray = new ArrayList<String>();
         try {
@@ -327,6 +408,22 @@ public class DatabaseManager {
         Scanner scanner = new Scanner(new File(filePath));
         
         StringBuilder sb = new StringBuilder();
+        
+        while (scanner.hasNext()) {
+            String rowText = scanner.nextLine();
+            if (rowText.startsWith(CSV_DOC_SEPERATOR)){
+                break;
+            }
+            
+            if (rowText.startsWith("DBVERSION:")){
+                if (rowText.equals("DBVERSION:" + VERSION)){
+                    
+                } else {
+                    System.out.println("Warning: Database Version Mismatch");
+                }
+            }
+        }
+        
         while (scanner.hasNext()) {
             String rowText = scanner.nextLine();
             if (rowText.startsWith(CSV_DOC_SEPERATOR)){
@@ -335,7 +432,7 @@ public class DatabaseManager {
             List<String> row = CSVUtils.parseLine(rowText, CSV_SEPARATOR, CSV_QUOTE);
             
             sb.append("(" + Long.valueOf(row.get(0)) + ", '" + row.get(1) + "', '" + row.get(2) + "', '" + row.get(3) + "'), ");
-            System.out.println("FILE [file_id= " + row.get(0) + ", name= " + row.get(1) + ", path=" + row.get(2) + ", hash=" + row.get(3) + "]");
+            //System.out.println("FILE [file_id= " + row.get(0) + ", name= " + row.get(1) + ", path=" + row.get(2) + ", hash=" + row.get(3) + "]");
         }
         
         String files = sb.toString();
@@ -349,7 +446,7 @@ public class DatabaseManager {
             List<String> row = CSVUtils.parseLine(rowText, CSV_SEPARATOR, CSV_QUOTE);
             
             sb.append("(" + Long.valueOf(row.get(0)) + "," + Integer.valueOf(row.get(1)) + ", " + Integer.valueOf(row.get(2)) + ", " + Integer.valueOf(row.get(3)) + "), ");
-            System.out.println("LABEL [file_id= " + row.get(0) + ", x_coor= " + row.get(1) + ", y_coor=" + row.get(2) + ", label=" + row.get(3) + "]");
+            //System.out.println("LABEL [file_id= " + row.get(0) + ", x_coor= " + row.get(1) + ", y_coor=" + row.get(2) + ", label=" + row.get(3) + "]");
         }
         String labels = sb.toString();
         scanner.close();
