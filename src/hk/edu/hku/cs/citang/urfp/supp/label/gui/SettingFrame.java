@@ -23,6 +23,7 @@ import java.awt.geom.Ellipse2D;
 import java.awt.image.AffineTransformOp;
 import java.sql.SQLException;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import javax.swing.JFrame;
@@ -43,6 +44,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JSlider;
 import javax.swing.JSeparator;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JCheckBox;
 import javax.swing.JColorChooser;
 
@@ -70,7 +72,7 @@ public class SettingFrame extends JFrame {
     int zoomSensitivity = 10;
 
     
-    HashMap<Long, LabelDescriptor> labelDescriptorTable;
+    LinkedHashMap<Long, LabelDescriptor> labelDescriptorTable;
     DefaultListModel<ListSelectionWrapper> labelListModel;
     JList<ListSelectionWrapper> listLabels;
     
@@ -252,7 +254,8 @@ public class SettingFrame extends JFrame {
         panel_1.setLayout(new BorderLayout(0, 0));
         
         JPanel panel_2 = new JPanel();
-        JScrollPane scrollPane_2 = new JScrollPane(panel_2);
+        AlphaContainer panel_2_wrap = new AlphaContainer(panel_2);
+        JScrollPane scrollPane_2 = new JScrollPane(panel_2_wrap);
         panel_1.add(scrollPane_2, BorderLayout.CENTER);
 
         panel_2.setLayout(new MigLayout("", "[][grow]", "[][][][][][][][][][][]"));
@@ -453,7 +456,7 @@ public class SettingFrame extends JFrame {
                             borderColor,
                             currentShapeString,
                             drawShapeSize,
-                            drawShapeThicknessPercent * drawShapeSize / 100 );
+                            (int) Math.ceil(drawShapeThicknessPercent * drawShapeSize / 100.0) );
                     labelListModel.remove(selectedListIndex);
                     labelListModel.insertElementAt(new ListSelectionWrapper(newDescriptor.getId(), newDescriptor.getName()), selectedListIndex);
                     
@@ -511,6 +514,7 @@ public class SettingFrame extends JFrame {
                         sliderShapeThickness.setValue(drawShapeThicknessPercent);
                         lblShapeThickness.setText(drawShapeThicknessPercent + "%");
                         comboBox.setSelectedItem(currentShapeString);
+                        panel_2_wrap.repaint();
                         shapeDisplayPanel.repaint();
                     }
                 }
@@ -605,6 +609,54 @@ public class SettingFrame extends JFrame {
 
         }
         
+    }
+    
+    /***************************************************************************************
+    *    Title: Backgrounds With Transparency
+    *    Author: Rob Camick
+    *    Date: May 31, 2009
+    *    Code version: Unknown
+    *    Availability: https://tips4java.wordpress.com/2009/05/31/backgrounds-with-transparency/
+    *
+    ***************************************************************************************/
+    
+    /**
+     *  A wrapper Container for holding components that use a background Color
+     *  containing an alpha value with some transparency.
+     *
+     *  A Component that uses a transparent background should really have its
+     *  opaque property set to false so that the area it occupies is first painted
+     *  by its opaque ancestor (to make sure no painting artifacts exist). However,
+     *  if the property is set to false, then most Swing components will not paint
+     *  the background at all, so you lose the transparent background Color.
+     *
+     *  This components attempts to get around this problem by doing the
+     *  background painting on behalf of its contained Component, using the
+     *  background Color of the Component.
+     */
+    public class AlphaContainer extends JComponent
+    {
+        private JComponent component;
+
+        public AlphaContainer(JComponent component)
+        {
+            this.component = component;
+            setLayout( new BorderLayout() );
+            setOpaque( false );
+            component.setOpaque( false );
+            add( component );
+        }
+
+        /**
+         *  Paint the background using the background Color of the
+         *  contained component
+         */
+        @Override
+        public void paintComponent(Graphics g)
+        {
+            g.setColor( component.getBackground() );
+            g.fillRect(0, 0, getWidth(), getHeight());
+        }
     }
 
 }

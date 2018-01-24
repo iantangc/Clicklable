@@ -38,6 +38,7 @@ import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -88,7 +89,7 @@ import net.miginfocom.swing.MigLayout;
 
 public class ClicklableMain {
 
-    private static final String VERSION = "1.2";
+    private static final String VERSION = "1.3";
     private static final String APPLICATION_NAME = "Clicklable";
 
     private ClicklableMain window;
@@ -131,7 +132,7 @@ public class ClicklableMain {
     int zoomSensitivity = 10;
 
     private HashMap<Point, Long> pointLabelTable;
-    HashMap<Long, LabelDescriptor> labelDescriptorTable;
+    LinkedHashMap<Long, LabelDescriptor> labelDescriptorTable;
     
 
 
@@ -228,7 +229,7 @@ public class ClicklableMain {
         });
         frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 
-        labelDescriptorTable = new HashMap<Long, LabelDescriptor>();
+        labelDescriptorTable = new LinkedHashMap<Long, LabelDescriptor>();
         config = new ConfigManager();
         File configFile = new File(configPath);
         if (configFile.exists()){
@@ -653,62 +654,133 @@ public class ClicklableMain {
                 boolean matched = false;
                 boolean newFileEnabled = false;
 
+                // When both path and hash match
                 List<Long> filesByPathHash = db.getFileIDByConstraints(chosenFile, true, true, false);
-                if (filesByPathHash.size() == 1) {
+                if (filesByPathHash.size() >= 1) {
                     currentImgID = filesByPathHash.get(0);
                     db.updateFile(currentImgID, chosenFile);
                     matched = true;
                     System.out.println("Open File Path & Hash Match");
                 } 
+                
+                // When name and hash match but not path
                 if (!matched && !newFileEnabled){
                     List<Long> filesByNameHash = db.getFileIDByConstraints(chosenFile, false, true, true);
-                    if (filesByNameHash.size() == 1) {
-                        long imageID = filesByNameHash.get(0);
-                        File matchFile = db.getFileByID(imageID);
-                        
-                        int dialogResult = JOptionPane.showConfirmDialog(frame,
-                                "An image previously located at " + matchFile.getAbsolutePath() + " with the same name and hash is detected.\nDo you want to load the corresponding data?",
-                                "Reminder", JOptionPane.YES_NO_CANCEL_OPTION);
-                        if (dialogResult == JOptionPane.YES_OPTION) {
-                            try {
-                                currentImgID = imageID;
-                                db.updateFile(currentImgID, chosenFile);
-                                matched = true;
-                                System.out.println("Open File Name Hash Match");
-                            } catch (Exception e) {
-                                e.printStackTrace();
+                    if (filesByNameHash.size() >= 1) {
+                        for (int i = 0; i < filesByNameHash.size(); i++){
+                            long imageID = filesByNameHash.get(i);
+                            File matchFile = db.getFileByID(imageID);
+                            
+                            int dialogResult = JOptionPane.showConfirmDialog(frame,
+                                    "An image previously located at " + matchFile.getAbsolutePath() + " with the same name and hash is detected.\nDo you want to load the corresponding data?",
+                                    "Reminder - Same name and hash", JOptionPane.YES_NO_CANCEL_OPTION);
+                            if (dialogResult == JOptionPane.YES_OPTION) {
+                                try {
+                                    currentImgID = imageID;
+                                    db.updateFile(currentImgID, chosenFile);
+                                    matched = true;
+                                    System.out.println("Open File Name Hash Match");
+                                    break;
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            } else if (dialogResult == JOptionPane.NO_OPTION) {
+                                newFileEnabled = true;
+                            } else if (dialogResult == JOptionPane.CANCEL_OPTION) {
+                                return;
                             }
-                        } else if (dialogResult == JOptionPane.NO_OPTION) {
-                            newFileEnabled = true;
-                        } else if (dialogResult == JOptionPane.CANCEL_OPTION) {
-                            return;
+                        }
+                    }
+                }
+                
+                // When only hash matches
+                if (!matched && !newFileEnabled){
+                    List<Long> filesByHash = db.getFileIDByConstraints(chosenFile, false, true, false);
+                    if (filesByHash.size() >= 1) {
+                        for (int i = 0; i < filesByHash.size(); i++){
+                            long imageID = filesByHash.get(i);
+                            File matchFile = db.getFileByID(imageID);
+                            
+                            int dialogResult = JOptionPane.showConfirmDialog(frame,
+                                    "An image previously located at " + matchFile.getAbsolutePath() + " with the same hash but different name is detected.\nDo you want to load the corresponding data?",
+                                    "Reminder - Same hash", JOptionPane.YES_NO_CANCEL_OPTION);
+                            if (dialogResult == JOptionPane.YES_OPTION) {
+                                try {
+                                    currentImgID = imageID;
+                                    db.updateFile(currentImgID, chosenFile);
+                                    matched = true;
+                                    System.out.println("Open File Hash Match");
+                                    break;
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            } else if (dialogResult == JOptionPane.NO_OPTION) {
+                                newFileEnabled = true;
+                            } else if (dialogResult == JOptionPane.CANCEL_OPTION) {
+                                return;
+                            }
                         }
                         
                     }
                 }
                 
+                // When only path matches
                 if (!matched && !newFileEnabled){
-                    List<Long> filesByHash = db.getFileIDByConstraints(chosenFile, false, true, false);
-                    if (filesByHash.size() == 1) {
-                        long imageID = filesByHash.get(0);
-                        File matchFile = db.getFileByID(imageID);
-                        
-                        int dialogResult = JOptionPane.showConfirmDialog(frame,
-                                "An image previously located at " + matchFile.getAbsolutePath() + " with the same hash but different name is detected.\nDo you want to load the corresponding data?",
-                                "Reminder", JOptionPane.YES_NO_CANCEL_OPTION);
-                        if (dialogResult == JOptionPane.YES_OPTION) {
-                            try {
-                                currentImgID = imageID;
-                                db.updateFile(currentImgID, chosenFile);
-                                matched = true;
-                                System.out.println("Open File Hash Match");
-                            } catch (Exception e) {
-                                e.printStackTrace();
+                    List<Long> filesByPath = db.getFileIDByConstraints(chosenFile, true, false, false);
+                    if (filesByPath.size() >= 1) {
+                        for (int i = 0; i < filesByPath.size(); i++){
+                            long imageID = filesByPath.get(i);
+                            File matchFile = db.getFileByID(imageID);
+                            
+                            int dialogResult = JOptionPane.showConfirmDialog(frame,
+                                    "An image previously located at " + matchFile.getAbsolutePath() + " with the same path but different hash is detected.\nDo you want to load the corresponding data?",
+                                    "Reminder - Same path", JOptionPane.YES_NO_CANCEL_OPTION);
+                            if (dialogResult == JOptionPane.YES_OPTION) {
+                                try {
+                                    currentImgID = imageID;
+                                    db.updateFile(currentImgID, chosenFile);
+                                    matched = true;
+                                    System.out.println("Open File Hash Match");
+                                    break;
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            } else if (dialogResult == JOptionPane.NO_OPTION) {
+                                newFileEnabled = true;
+                            } else if (dialogResult == JOptionPane.CANCEL_OPTION) {
+                                return;
                             }
-                        } else if (dialogResult == JOptionPane.NO_OPTION) {
-                            newFileEnabled = true;
-                        } else if (dialogResult == JOptionPane.CANCEL_OPTION) {
-                            return;
+                        }
+                        
+                    }
+                }
+                
+                // When only name matches
+                if (!matched && !newFileEnabled){
+                    List<Long> filesByName = db.getFileIDByConstraints(chosenFile, false, false, true);
+                    if (filesByName.size() >= 1) {
+                        for (int i = 0; i < filesByName.size(); i++){
+                            long imageID = filesByName.get(i);
+                            File matchFile = db.getFileByID(imageID);
+                            
+                            int dialogResult = JOptionPane.showConfirmDialog(frame,
+                                    "An image previously located at " + matchFile.getAbsolutePath() + " with the same name but different hash is detected.\nDo you want to load the corresponding data?",
+                                    "Reminder - Same name", JOptionPane.YES_NO_CANCEL_OPTION);
+                            if (dialogResult == JOptionPane.YES_OPTION) {
+                                try {
+                                    currentImgID = imageID;
+                                    db.updateFile(currentImgID, chosenFile);
+                                    matched = true;
+                                    System.out.println("Open File Hash Match");
+                                    break;
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                }
+                            } else if (dialogResult == JOptionPane.NO_OPTION) {
+                                newFileEnabled = true;
+                            } else if (dialogResult == JOptionPane.CANCEL_OPTION) {
+                                return;
+                            }
                         }
                         
                     }
