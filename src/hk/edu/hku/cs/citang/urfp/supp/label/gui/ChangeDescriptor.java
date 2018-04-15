@@ -8,41 +8,55 @@ public class ChangeDescriptor {
     public static final String ACTION_REMOVE = "REMOVE";
     
     public String action;
-    public PointLabel before;
-    public PointLabel after;
+    public LabelData before;
+    public LabelData after;
     
-    public ChangeDescriptor(String action, Point p_before, Long l_before, Point p_after, Long l_after){
+    public ChangeDescriptor(String action, LabelData before, LabelData after){
         this.action = action;
-        before = new PointLabel(p_before, l_before);
-        after = new PointLabel(p_after, l_after);
+        this.before = before;
+        this.after = after;
     }
     
     public String getAction(){
         return action;
     }
     
-    public Point getPointBefore(){
-        return before.point;
+    public LabelData getBefore(){
+        return before;
     }
     
-    public Point getPointAfter(){
-        return after.point;
+    public LabelData getAfter(){
+        return after;
     }
+}
+class LabelData {
+    public static final String TYPE_POINT = "POINT";
+    public static final String TYPE_BOUNINGBOX = "BOUNDINGBOX";
     
-    public long getLabelBefore(){
-        return before.label;
+    public Object data;
+    public Object getData() {
+        return data;
     }
-    
-    public long getLabelAfter(){
-        return after.label;
+    public void setData(Object data) {
+        this.data = data;
     }
-    
-    class PointLabel {
-        public Point point;
-        public Long label;
-        public PointLabel(Point p, Long l){
-            this.point = p;
-            this.label = l;
-        }
+    public Long getLabel() {
+        return label;
+    }
+    public void setLabel(Long label) {
+        this.label = label;
+    }
+    public String getType() {
+        return type;
+    }
+    public void setType(String type) {
+        this.type = type;
+    }
+    public Long label;
+    public String type;
+    public LabelData(Object d, Long l, String t){
+        this.data = d;
+        this.label = l;
+        this.type = t;
     }
 }

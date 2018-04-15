@@ -456,12 +456,13 @@ public class SettingFrame extends JFrame {
                             borderColor,
                             currentShapeString,
                             drawShapeSize,
-                            (int) Math.ceil(drawShapeThicknessPercent * drawShapeSize / 100.0) );
+                            (int) Math.round(drawShapeThicknessPercent * drawShapeSize / 100.0) );
                     labelListModel.remove(selectedListIndex);
                     labelListModel.insertElementAt(new ListSelectionWrapper(newDescriptor.getId(), newDescriptor.getName()), selectedListIndex);
                     
-                    labelDescriptorTable.remove(selectedListItem.getId());
-                    labelDescriptorTable.put(newDescriptor.getId(), newDescriptor);
+                    labelDescriptorTable.replace(selectedListItem.getId(), newDescriptor);
+//                    labelDescriptorTable.remove(selectedListItem.getId());
+//                    labelDescriptorTable.put(newDescriptor.getId(), newDescriptor);
                     listLabels.revalidate();
                     
                 }
@@ -505,10 +506,10 @@ public class SettingFrame extends JFrame {
                         borderColor = selectedDescriptor.getDraw_border_color();
                         lblFillColor.setBackground(fillColor);
                         lblBorderColor.setBackground(borderColor);
-                        
+                        //TODO
                         currentShapeString = selectedDescriptor.getShapeString();
                         drawShapeSize = selectedDescriptor.getShapeSize();
-                        drawShapeThicknessPercent = selectedDescriptor.getShapeThickness() * 100 / selectedDescriptor.getShapeSize();
+                        drawShapeThicknessPercent = (int) Math.round(selectedDescriptor.getShapeThickness() * 100.0 / selectedDescriptor.getShapeSize());
                         sliderShapeSize.setValue(drawShapeSize);
                         lblShapeSize.setText(drawShapeSize + "px");
                         sliderShapeThickness.setValue(drawShapeThicknessPercent);

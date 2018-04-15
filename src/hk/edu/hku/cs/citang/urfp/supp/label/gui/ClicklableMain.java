@@ -1,5 +1,6 @@
 package hk.edu.hku.cs.citang.urfp.supp.label.gui;
 
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -14,6 +15,7 @@ import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Shape;
+import java.awt.Stroke;
 import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -75,6 +77,8 @@ import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.MouseInputListener;
 import javax.swing.event.PopupMenuListener;
+import javax.swing.filechooser.FileFilter;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.xml.stream.XMLEventReader;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLOutputFactory;
@@ -89,7 +93,7 @@ import net.miginfocom.swing.MigLayout;
 
 public class ClicklableMain {
 
-    private static final String VERSION = "1.3";
+    private static final String VERSION = "2.0A";
     private static final String APPLICATION_NAME = "Clicklable";
 
     private ClicklableMain window;
@@ -127,10 +131,12 @@ public class ClicklableMain {
 
     private int currentEditMode = 1;
     JCheckBox cbSnapEnabled;
+    private int labelMode = 1; // Mode 2 = Bounding box
     private boolean snapEnabled = false;
     int snapBound = 30;
     int zoomSensitivity = 10;
 
+    private HashMap<Rectangle, Long> boundingBoxLabelTable;
     private HashMap<Point, Long> pointLabelTable;
     LinkedHashMap<Long, LabelDescriptor> labelDescriptorTable;
     
@@ -258,7 +264,7 @@ public class ClicklableMain {
         drawPanel.setBackground(Color.white);
 
         pointLabelTable = new HashMap<Point, Long>();
-        
+        boundingBoxLabelTable = new HashMap<Rectangle, Long>();
 
         JPanel panel = new JPanel();
         frame.getContentPane().add(panel, BorderLayout.NORTH);
@@ -295,6 +301,28 @@ public class ClicklableMain {
         JPanel panelControl = new JPanel();
         JScrollPane scrollPane_2 = new JScrollPane(panelControl);
         panelControl.setLayout(new MigLayout("", "[][][]", "[][]"));
+        
+        JLabel lblLabelMode = new JLabel("Label Mode");
+        panelControl.add(lblLabelMode, "growx, wrap");
+        
+        ButtonGroup rdbtngLabelModeFunction = new ButtonGroup();
+        LabelModeFunctionSelectHandler rdbtnLabelModeFuncHandler = new LabelModeFunctionSelectHandler();
+        
+        JRadioButton rdbtnPoint = new JRadioButton("Point");
+        rdbtnPoint.addActionListener(rdbtnLabelModeFuncHandler);
+        rdbtnPoint.setActionCommand("1");
+        rdbtnPoint.setSelected(true);
+        rdbtngLabelModeFunction.add(rdbtnPoint);
+        panelControl.add(rdbtnPoint, "wrap");
+        
+        JRadioButton rdbtnRectangle = new JRadioButton("Rectangle");
+        rdbtnRectangle.addActionListener(rdbtnLabelModeFuncHandler);
+        rdbtnRectangle.setActionCommand("2");
+        rdbtngLabelModeFunction.add(rdbtnRectangle);
+        panelControl.add(rdbtnRectangle, "wrap");
+        
+        JSeparator separator_1 = new JSeparator();
+        panelControl.add(separator_1, "growx, span, wrap");
 
         JLabel lblNewLabel_1 = new JLabel("Edit Mode");
         panelControl.add(lblNewLabel_1, "growx, wrap");
@@ -455,14 +483,25 @@ public class ClicklableMain {
         if (changesHistory.size() != 0){
             //System.out.println("REVERT");
             ChangeDescriptor prevChange = changesHistory.getLast();
-            if (prevChange.getAction() == ChangeDescriptor.ACTION_ADD){
-                pointLabelTable.remove(prevChange.getPointAfter());
-            } else if (prevChange.getAction() == ChangeDescriptor.ACTION_MODIFY){
-                pointLabelTable.remove(prevChange.getPointAfter(), prevChange.getLabelAfter());
-                pointLabelTable.put(prevChange.getPointBefore(), prevChange.getLabelBefore());
-            } else if (prevChange.getAction() == ChangeDescriptor.ACTION_REMOVE){
-                pointLabelTable.put(prevChange.getPointBefore(), prevChange.getLabelBefore());
+            if (prevChange.getAction() == ChangeDescriptor.ACTION_ADD || prevChange.getAction() == ChangeDescriptor.ACTION_MODIFY){
+                LabelData afterLabelData = prevChange.getAfter();
+                if (afterLabelData.getType() == LabelData.TYPE_POINT){
+                    pointLabelTable.remove((Point) afterLabelData.getData());
+                } else if (afterLabelData.getType() == LabelData.TYPE_BOUNINGBOX){
+                    boundingBoxLabelTable.remove((Rectangle) afterLabelData.getData());
+                }
+            } 
+            
+            if (prevChange.getAction() == ChangeDescriptor.ACTION_MODIFY || prevChange.getAction() == ChangeDescriptor.ACTION_REMOVE){
+                LabelData beforeLabelData = prevChange.getBefore();
+                if (beforeLabelData.getType() == LabelData.TYPE_POINT){
+                    pointLabelTable.put((Point) beforeLabelData.getData(), beforeLabelData.getLabel());
+                } else if (beforeLabelData.getType() == LabelData.TYPE_BOUNINGBOX){
+                    boundingBoxLabelTable.put((Rectangle) beforeLabelData.getData(), beforeLabelData.getLabel());
+                }
             }
+                
+
             undoHistory.addFirst(prevChange);;
             changesHistory.removeLast();
             changeMade = true;
@@ -474,15 +513,32 @@ public class ClicklableMain {
     public void redoChange(){
         if (undoHistory.size() != 0){
             //System.out.println("REVERT");
+            
+            
+            
             ChangeDescriptor prevChange = undoHistory.getFirst();
-            if (prevChange.getAction() == ChangeDescriptor.ACTION_ADD){
-                pointLabelTable.put(prevChange.getPointAfter(), prevChange.getLabelAfter());
-            } else if (prevChange.getAction() == ChangeDescriptor.ACTION_MODIFY){
-                pointLabelTable.remove(prevChange.getPointBefore(), prevChange.getLabelBefore());
-                pointLabelTable.put(prevChange.getPointAfter(), prevChange.getLabelAfter());
-            } else if (prevChange.getAction() == ChangeDescriptor.ACTION_REMOVE){
-                pointLabelTable.remove(prevChange.getPointBefore(), prevChange.getLabelBefore());
+            
+            if (prevChange.getAction() == ChangeDescriptor.ACTION_MODIFY || prevChange.getAction() == ChangeDescriptor.ACTION_REMOVE){
+                LabelData beforeLabelData = prevChange.getBefore();
+                if (beforeLabelData.getType() == beforeLabelData.TYPE_POINT){
+                    pointLabelTable.remove((Point) beforeLabelData.getData());
+                } else if (beforeLabelData.getType() == LabelData.TYPE_BOUNINGBOX){
+                    boundingBoxLabelTable.remove((Rectangle) beforeLabelData.getData());
+                }
             }
+            
+            
+            if (prevChange.getAction() == ChangeDescriptor.ACTION_ADD || prevChange.getAction() == ChangeDescriptor.ACTION_MODIFY){
+                LabelData afterLabelData = prevChange.getAfter();
+                if (afterLabelData.getType() == LabelData.TYPE_POINT){
+                    pointLabelTable.put((Point) afterLabelData.getData(), afterLabelData.getLabel());
+                } else if (afterLabelData.getType() == LabelData.TYPE_BOUNINGBOX){
+                    boundingBoxLabelTable.put((Rectangle) afterLabelData.getData(), afterLabelData.getLabel());
+                }
+            } 
+            
+
+            
             changesHistory.addLast(prevChange);
             undoHistory.removeFirst();
             changeMade = true;
@@ -543,6 +599,8 @@ public class ClicklableMain {
             dir = new File(currentWorkingDirectory);
         }
         chooser.setCurrentDirectory(dir);
+        FileFilter filter = new FileNameExtensionFilter("Comma Separated Values File", "csv");
+        chooser.setFileFilter(filter);
         int returnVal = chooser.showSaveDialog(frame);
         if (returnVal == JFileChooser.APPROVE_OPTION) {
 
@@ -602,14 +660,21 @@ public class ClicklableMain {
             dir = new File(currentWorkingDirectory);
         }
         chooser.setCurrentDirectory(dir);
+        FileFilter filter = new FileNameExtensionFilter("Comma Separated Values File", "csv");
+        chooser.setFileFilter(filter);
+        
         int returnVal = chooser.showSaveDialog(frame);
         if (returnVal == JFileChooser.APPROVE_OPTION) {
             
             File chosenFile = chooser.getSelectedFile();
             recentExportDirectory = chosenFile.getParent();
             try {
-                db.databaseExportAsCSV(chosenFile.getAbsolutePath());
-                JOptionPane.showMessageDialog(frame, "All data are successfully exported to " + chosenFile.getPath(),
+                String path = chosenFile.getAbsolutePath();
+                if (! path.endsWith(".csv")){
+                    path += ".csv";
+                }
+                db.databaseExportAsCSV(path);
+                JOptionPane.showMessageDialog(frame, "All data are successfully exported to " + path,
                         "Database Export", JOptionPane.INFORMATION_MESSAGE);
             } catch (Exception e) {
                 e.printStackTrace();
@@ -643,6 +708,7 @@ public class ClicklableMain {
             dir = new File(currentWorkingDirectory);
         }
         chooser.setCurrentDirectory(dir);
+
         int returnVal = chooser.showSaveDialog(frame);
         if (returnVal == JFileChooser.APPROVE_OPTION) {
 
@@ -792,9 +858,12 @@ public class ClicklableMain {
                 }
                 //System.out.println("ID:" + currentImgID);
                 currentImg = ImageIO.read(chosenFile);
+                // TODO
+                drawPanel.parentScrollPane.getViewport().setViewPosition(new Point(0, 0));;
                 drawPanel.setPreferredSize(new Dimension(currentImg.getWidth(), currentImg.getHeight()));
                 drawPanel.repaint();
                 pointLabelTable = db.getPointLabelsByFileID(currentImgID);
+                boundingBoxLabelTable = db.getBoundingBoxLabelsByFileID(currentImgID);
                 currentImgDirectory = chosenFile.getParent();
                 currentImgPath = chosenFile.getPath();
                 currentImgName = chosenFile.getName();
@@ -813,6 +882,7 @@ public class ClicklableMain {
     public void saveCurrentLabels(){
         try {
             db.updatePointLabels(currentImgID, pointLabelTable);
+            db.updateBoundingBoxLabels(currentImgID, boundingBoxLabelTable);
             changeMade = false;
             frame.setTitle(APPLICATION_NAME + " - " + currentImgName);
         } catch (SQLException e1) {
@@ -821,7 +891,7 @@ public class ClicklableMain {
     }
     
     public void showAbout(){
-        JOptionPane.showMessageDialog(frame, "Clicklable\nVersion: " + VERSION + "\nCopyright 2017 Chi Ian Tang. All rights reserved.",
+        JOptionPane.showMessageDialog(frame, "Clicklable\nVersion: " + VERSION + "\nCopyright 2018 Chi Ian Tang. All rights reserved.",
                 "About", JOptionPane.PLAIN_MESSAGE);
     }
 
@@ -837,6 +907,16 @@ public class ClicklableMain {
                 snapEnabled = true;
                 cbSnapEnabled.setSelected(true);
             }
+            drawPanel.repaint();
+        }
+
+    }
+    
+    class LabelModeFunctionSelectHandler implements ActionListener {
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            labelMode = Integer.valueOf(e.getActionCommand());
             drawPanel.repaint();
         }
 
@@ -897,10 +977,11 @@ public class ClicklableMain {
          */
         private static final long serialVersionUID = -377915463140971553L;
         
-        private JScrollPane parentScrollPane = null;
+        public JScrollPane parentScrollPane = null;
         
-
-
+        
+        private Rectangle snapRectangle = null;
+        private Integer snapRectangleCorner = null;
         private Point snapPoint = null;
         private Color colorHighLight = new Color(255, 255, 255, 128);
         private Color colorCenter = new Color (255, 255, 255, 196);
@@ -911,6 +992,7 @@ public class ClicklableMain {
         private boolean isPointDragging = false;
         private Point dragPoint = null;
         private long dragPointLabel = -1;
+        
         private Point dragCursorStartPoint = null;
         private Point currentCursorPointReal = null;
         
@@ -971,7 +1053,10 @@ public class ClicklableMain {
             removeLabelItem.addActionListener(new ActionListener() {
                 @Override
                 public void actionPerformed(ActionEvent e) {
-                    ChangeDescriptor thisChange = new ChangeDescriptor(ChangeDescriptor.ACTION_REMOVE, menuLockedPoint, pointLabelTable.get(menuLockedPoint), null, null);
+                    ChangeDescriptor thisChange = new ChangeDescriptor(
+                            ChangeDescriptor.ACTION_REMOVE, 
+                            new LabelData(menuLockedPoint, pointLabelTable.get(menuLockedPoint), LabelData.TYPE_POINT), 
+                            null);
                     updateLabelPoint(thisChange);
                 }
             });
@@ -1050,7 +1135,10 @@ public class ClicklableMain {
                 JMenuItem addLabelItem = new JMenuItem(entry.getValue().getName());
                 addLabelItem.addActionListener(new ActionListener() {
                     public void actionPerformed(ActionEvent e) {
-                        ChangeDescriptor thisChange = new ChangeDescriptor(ChangeDescriptor.ACTION_ADD, null, null, menuLockedPoint, entry.getValue().getId());
+                        ChangeDescriptor thisChange = new ChangeDescriptor(
+                                ChangeDescriptor.ACTION_ADD, 
+                                null, 
+                                new LabelData(menuLockedPoint, entry.getValue().getId(), LabelData.TYPE_POINT));
                         updateLabelPoint(thisChange);
                     }
                 });
@@ -1059,7 +1147,10 @@ public class ClicklableMain {
                 JMenuItem changeLabelItem = new JMenuItem(entry.getValue().getName());
                 changeLabelItem.addActionListener(new ActionListener() {
                     public void actionPerformed(ActionEvent e) {
-                        ChangeDescriptor thisChange = new ChangeDescriptor(ChangeDescriptor.ACTION_MODIFY, menuLockedPoint, pointLabelTable.get(menuLockedPoint), menuLockedPoint, entry.getValue().getId());
+                        ChangeDescriptor thisChange = new ChangeDescriptor(
+                                ChangeDescriptor.ACTION_MODIFY, 
+                                new LabelData(menuLockedPoint, pointLabelTable.get(menuLockedPoint), LabelData.TYPE_POINT), 
+                                new LabelData(menuLockedPoint, entry.getValue().getId(), LabelData.TYPE_POINT));
                         updateLabelPoint(thisChange);
                     }
                 });
@@ -1113,7 +1204,35 @@ public class ClicklableMain {
                     g2d.draw(shape);
                 }
                 
-                if (isPointDragging){
+                for (Map.Entry<Rectangle, Long> entry : boundingBoxLabelTable.entrySet()) {
+                    Rectangle key = entry.getKey();
+                    Long value = entry.getValue();
+                    if (key == null){
+                        continue;
+                    }
+                    g2d.setColor(labelDescriptorTable.get(value).draw_fill_color);
+                    
+                    Stroke oldStroke = g2d.getStroke();
+                    BasicStroke thick = new BasicStroke(2.0f);
+                    g2d.setStroke(thick);
+                    
+                    g2d.draw(new Rectangle(
+                            (int) (key.getX() * currentZoom), 
+                            (int) (key.getY() * currentZoom), 
+                            (int) (key.getWidth() * currentZoom) + 1, 
+                            (int) (key.getHeight() * currentZoom) + 1));
+                    g2d.setStroke(oldStroke);
+                    
+                }
+                
+                // TODO: Update Option
+                if (labelMode == 2){
+                    g2d.setColor(new Color(128, 128, 128, 64));
+                    g2d.drawLine(0, (int) currentCursorPointReal.getY(), getWidth(), (int) currentCursorPointReal.getY());
+                    g2d.drawLine((int) currentCursorPointReal.getX(), 0, (int) currentCursorPointReal.getX(), getHeight());
+                }
+                
+                if (isPointDragging && labelMode == 1){
                     Point key = dragPoint;
                     Long value = dragPointLabel;
                     Shape shape = null;
@@ -1151,6 +1270,20 @@ public class ClicklableMain {
                             centerSize);
                     drawPanel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                     
+                } else if (isPointDragging && labelMode == 2){
+                    Rectangle key = new Rectangle(new Point((int) (dragPoint.getX() * currentZoom), (int) (dragPoint.getY() * currentZoom)));
+                    key.add(currentCursorPointReal);
+                    Long value = dragPointLabel;
+                    Stroke oldStroke = g2d.getStroke();
+                    float dash1[] = {10.0f};
+                    BasicStroke dashed = new BasicStroke(3.0f,
+                                            BasicStroke.CAP_BUTT,
+                                            BasicStroke.JOIN_MITER,
+                                            10.0f, dash1, 0.0f);
+                    g2d.setStroke(dashed);
+                    g2d.setColor(labelDescriptorTable.get(value).draw_fill_color.darker());
+                    g2d.draw(key);
+                    g2d.setStroke(oldStroke);
                 } else if (snapEnabled && snapPoint != null) {
                     // System.out.println(snapPoint);
                     g2d.setColor(colorHighLight);
@@ -1210,9 +1343,12 @@ public class ClicklableMain {
             lblZoom.setText(String.format("Zoom: %.2f%%", currentZoom * 100));
         }
 
+        
+        
         public Point getClosestPoint(Point q) {
             double minDist = snapBound;
             Point closestP = null;
+            
             for (Point p : pointLabelTable.keySet()) {
                 double d = p.distance(q);
                 if (d <= minDist) {
@@ -1221,6 +1357,37 @@ public class ClicklableMain {
                 }
             }
             return closestP;
+
+        }
+        
+        public Point[] getCorners(Rectangle r){
+            Point[] corners = new Point[4];
+            for (int i = 0; i < 4; i++){
+                corners[i] = r.getLocation();
+            }
+            corners[1].translate((int) r.getWidth(), 0);
+            corners[2].translate(0, (int) r.getHeight());
+            corners[3].translate((int) r.getWidth(), (int) r.getHeight());
+            
+            return corners;
+        }
+        
+        public Rectangle getClosestRectangle(Point q){
+            double minDist = snapBound;
+            Rectangle closestR = null;
+            
+            for (Rectangle r : boundingBoxLabelTable.keySet()) {
+                Point[] corners = getCorners(r);
+                
+                for (int i = 0; i < corners.length; i++){
+                    double d = q.distance(corners[i]);
+                    if (d <= minDist) {
+                        closestR = r;
+                        minDist = d;
+                    }
+                }
+            }
+            return closestR;
         }
         
         public void updateCursorPosInfo(Point e){
@@ -1231,17 +1398,45 @@ public class ClicklableMain {
         }
         
         public void updateLabelPoint(ChangeDescriptor thisChange){
+            if (thisChange == null){
+                return;
+            }
             if (thisChange.getAction() == ChangeDescriptor.ACTION_ADD){
-                pointLabelTable.put(thisChange.getPointAfter(), thisChange.getLabelAfter());
+                if (thisChange.getAfter().getType() == LabelData.TYPE_POINT){
+                    pointLabelTable.put((Point) thisChange.getAfter().getData(), thisChange.getAfter().getLabel());
+                } else if (thisChange.getAfter().getType() == LabelData.TYPE_BOUNINGBOX){
+                    boundingBoxLabelTable.put((Rectangle) thisChange.getAfter().getData(), thisChange.getAfter().getLabel());
+                }
+                
             } else if (thisChange.getAction() == ChangeDescriptor.ACTION_MODIFY){
-                if (pointLabelTable.containsKey(thisChange.getPointBefore())){
-                    pointLabelTable.remove(thisChange.getPointBefore());
-                }      
-                pointLabelTable.put(thisChange.getPointAfter(), thisChange.getLabelAfter());
+                
+                if (thisChange.getBefore().getType() == LabelData.TYPE_POINT){
+                    if (pointLabelTable.containsKey((Point) thisChange.getBefore().getData())){
+                        pointLabelTable.remove((Point) thisChange.getBefore().getData());
+                    }
+                } else if (thisChange.getBefore().getType() == LabelData.TYPE_BOUNINGBOX){
+                    if (boundingBoxLabelTable.containsKey((Rectangle) thisChange.getBefore().getData())){
+                        boundingBoxLabelTable.remove((Rectangle) thisChange.getBefore().getData());
+                    }
+                }
+                
+                if (thisChange.getAfter().getType() == LabelData.TYPE_POINT){
+                    pointLabelTable.put((Point) thisChange.getAfter().getData(), thisChange.getAfter().getLabel());
+                } else if (thisChange.getAfter().getType() == LabelData.TYPE_BOUNINGBOX){
+                    boundingBoxLabelTable.put((Rectangle) thisChange.getAfter().getData(), thisChange.getAfter().getLabel());
+                }
+                
+
             } else if (thisChange.getAction() == ChangeDescriptor.ACTION_REMOVE){
-                if (pointLabelTable.containsKey(thisChange.getPointBefore())){
-                    pointLabelTable.remove(thisChange.getPointBefore());
-                }    
+                if (thisChange.getBefore().getType() == LabelData.TYPE_POINT){
+                    if (pointLabelTable.containsKey((Point) thisChange.getBefore().getData())){
+                        pointLabelTable.remove((Point) thisChange.getBefore().getData());
+                    }
+                } else if (thisChange.getBefore().getType() == LabelData.TYPE_BOUNINGBOX){
+                    if (boundingBoxLabelTable.containsKey((Rectangle) thisChange.getBefore().getData())){
+                        boundingBoxLabelTable.remove((Rectangle) thisChange.getBefore().getData());
+                    }
+                }  
             }
             
             if (changesHistory.size() >= historyCountMax){
@@ -1263,8 +1458,12 @@ public class ClicklableMain {
 
 
             Point editP;
-            if (snapEnabled && snapPoint != null) {
+            Rectangle editR = null;
+            if (labelMode == 1 && snapEnabled && snapPoint != null) {
                 editP = snapPoint;
+            } else if (labelMode == 2 && snapEnabled && snapRectangle != null) { 
+                editP = snapPoint;
+                editR = snapRectangle;
             } else {
                 editP = new Point((int) (e.getPoint().getX() / currentZoom), (int) (e.getPoint().getY() / currentZoom));
             }
@@ -1272,8 +1471,7 @@ public class ClicklableMain {
             if (SwingUtilities.isRightMouseButton(e)){
                 menuLockedPoint = editP;
                 isMenuShown = true;
-                
-                
+
                 if (pointLabelTable.containsKey(editP)) {
                     lockedPointPosItem.setText("At (" + (int) editP.getX() + ", " + (int) editP.getY() + ")");
                     lockedPointInfoItem.setText(labelDescriptorTable.get(pointLabelTable.get(editP)).getName());
@@ -1293,20 +1491,50 @@ public class ClicklableMain {
 
             ChangeDescriptor thisChange = null;
             if (currentEditMode == 1 || currentEditMode == 2) {
-                if (pointLabelTable.containsKey(editP)){
-                    thisChange = new ChangeDescriptor(ChangeDescriptor.ACTION_MODIFY, editP, pointLabelTable.get(editP), editP, currentLabel);
-                } else {
-                    thisChange = new ChangeDescriptor(ChangeDescriptor.ACTION_ADD, null, null, editP, currentLabel);
+                if (labelMode == 1){
+                    if (pointLabelTable.containsKey(editP)){
+                        thisChange = new ChangeDescriptor(
+                                ChangeDescriptor.ACTION_MODIFY, 
+                                new LabelData(editP, pointLabelTable.get(editP), LabelData.TYPE_POINT), 
+                                new LabelData(editP, currentLabel, LabelData.TYPE_POINT));
+                    } else {
+                        thisChange = new ChangeDescriptor(
+                                ChangeDescriptor.ACTION_ADD, 
+                                null,
+                                new LabelData(editP, currentLabel, LabelData.TYPE_POINT));
+                    }
+                } else if (labelMode == 2) {
+                    if (editR != null && boundingBoxLabelTable.containsKey(editR)){
+                        thisChange = new ChangeDescriptor(
+                                ChangeDescriptor.ACTION_MODIFY, 
+                                new LabelData(editR, boundingBoxLabelTable.get(editR), LabelData.TYPE_BOUNINGBOX),
+                                new LabelData(editR, currentLabel, LabelData.TYPE_BOUNINGBOX));
+                    }
                 }
+
                 
             } else if (currentEditMode == 4) {
-                thisChange = new ChangeDescriptor(ChangeDescriptor.ACTION_REMOVE, editP, pointLabelTable.get(editP), null, null);
-                snapPoint = null;
+                if (labelMode == 1){
+                    thisChange = new ChangeDescriptor(ChangeDescriptor.ACTION_REMOVE, 
+                            new LabelData(editP, pointLabelTable.get(editP), LabelData.TYPE_POINT), 
+                            null);
+                    snapPoint = null;
+                } else if (labelMode == 2){
+                    if (editR != null && boundingBoxLabelTable.containsKey(editR)){
+                        thisChange = new ChangeDescriptor(
+                                ChangeDescriptor.ACTION_REMOVE, 
+                                new LabelData(editR, boundingBoxLabelTable.get(editR), LabelData.TYPE_BOUNINGBOX),
+                                null);
+                    }
+                }
+
             }
             updateLabelPoint(thisChange);
             
             //System.out.println(e.getPoint().toString() + " " + pointLabelTable.size());
+            updateSnapPoint();
             repaint();
+            
         }
 
         @Override
@@ -1322,8 +1550,38 @@ public class ClicklableMain {
         @Override
         public void mousePressed(MouseEvent e) {
             
-            
-            if (currentEditMode == 2 && snapEnabled && snapPoint != null && pointLabelTable.containsKey(snapPoint)){
+            if (SwingUtilities.isMiddleMouseButton(e)){
+                isPanDragging = true;
+                dragCursorStartPoint = e.getPoint();
+            } else if (labelMode == 2){
+                //System.out.println(currentEditMode + "" + snapEnabled + "" + snapRectangle);
+                if (currentEditMode == 2 && snapEnabled && snapRectangle != null){
+                    isPointDragging = true;
+                    dragPointLabel = boundingBoxLabelTable.get(snapRectangle);
+                    boundingBoxLabelTable.remove(snapRectangle);
+                    
+                    Point[] corners = getCorners(snapRectangle);
+                    Point anchor;
+                    if (snapRectangleCorner == 0){
+                        anchor = corners[3];
+                    } else if (snapRectangleCorner == 1){
+                        anchor = corners[2];
+                    } else if (snapRectangleCorner == 2){
+                        anchor = corners[1];
+                    } else {
+                        anchor = corners[0];
+                    }
+                    dragPoint = anchor;
+                    dragCursorStartPoint = new Point((int) (anchor.getX() * currentZoom), (int) (anchor.getY() * currentZoom));
+                } else if (currentEditMode == 1 || currentEditMode == 2){
+                    isPointDragging = true;
+                    dragPoint = new Point((int) (e.getPoint().getX() / currentZoom), (int) (e.getPoint().getY() / currentZoom));
+                    dragPointLabel = currentLabel;
+                    dragCursorStartPoint = e.getPoint();
+                }
+                
+
+            } else if (labelMode == 1 && currentEditMode == 2 && snapEnabled && snapPoint != null && pointLabelTable.containsKey(snapPoint)){
                 isPointDragging = true;
                 dragPoint = snapPoint;
                 dragPointLabel = pointLabelTable.get(dragPoint);
@@ -1343,23 +1601,54 @@ public class ClicklableMain {
             if (isPointDragging){
                 isPointDragging = false;
                 
-                
-                Point editP = new Point((int) ((dragPoint.getX() * currentZoom + currentCursorPointReal.getX() - dragCursorStartPoint.getX()) / currentZoom), 
-                        (int) ((dragPoint.getY() * currentZoom + currentCursorPointReal.getY() - dragCursorStartPoint.getY()) / currentZoom));
-                
-                ChangeDescriptor thisChange = new ChangeDescriptor(ChangeDescriptor.ACTION_MODIFY, dragPoint, dragPointLabel, editP, dragPointLabel);
+                if (labelMode == 1){
+                    Point editP = new Point((int) ((dragPoint.getX() * currentZoom + currentCursorPointReal.getX() - dragCursorStartPoint.getX()) / currentZoom), 
+                            (int) ((dragPoint.getY() * currentZoom + currentCursorPointReal.getY() - dragCursorStartPoint.getY()) / currentZoom));
+                    
+                    ChangeDescriptor thisChange = new ChangeDescriptor(ChangeDescriptor.ACTION_MODIFY, 
+                            new LabelData(dragPoint, dragPointLabel, LabelData.TYPE_POINT), 
+                            new LabelData(editP, dragPointLabel, LabelData.TYPE_POINT));
 
-                updateLabelPoint(thisChange);
-                dragPoint = null;
-                dragPointLabel = -1;
-                dragCursorStartPoint = null;
-                snapPoint = editP;
+                    updateLabelPoint(thisChange);
+                    dragPoint = null;
+                    dragPointLabel = -1;
+                    dragCursorStartPoint = null;
+                    snapPoint = editP;
 
-                repaint();
+                    repaint();
+                } else if (labelMode == 2){
+                    Point startP = new Point((int) (dragCursorStartPoint.getX() / currentZoom), (int) (dragCursorStartPoint.getY() / currentZoom));
+                    Point endP = currentCursorPos;
+                    Rectangle newRect = new Rectangle(startP);
+                    newRect.add(endP);
+                    
+                    if (newRect.getWidth() != 0 && newRect.getHeight() != 0){
+
+                        ChangeDescriptor thisChange = new ChangeDescriptor(
+                                ChangeDescriptor.ACTION_MODIFY, 
+                                new LabelData(snapRectangle, dragPointLabel, LabelData.TYPE_BOUNINGBOX), 
+                                new LabelData(newRect, currentLabel, LabelData.TYPE_BOUNINGBOX));
+    
+                        updateLabelPoint(thisChange);
+//                        boundingBoxLabelTable.put(newRect, currentLabel);
+                        
+                        dragPoint = null;
+                        
+                        dragPointLabel = -1;
+                        dragCursorStartPoint = null;
+//                        snapPoint = editP;
+                    }
+
+
+
+                    repaint();
+                }
+
             } else if (isPanDragging){
                 isPanDragging = false;
                 dragCursorStartPoint = null;
             }
+            updateSnapPoint();
         }
 
         @Override
@@ -1384,12 +1673,26 @@ public class ClicklableMain {
             }
         }
 
-        @Override
-        public void mouseMoved(MouseEvent e) {
-            updateCursorPosInfo(e.getPoint());
+        public void updateSnapPoint(){
             if (snapEnabled && currentImg != null) {
-                Point newSnapPoint = getClosestPoint(currentCursorPos);
-
+                Point newSnapPoint = null;
+                if (labelMode == 1){
+                    newSnapPoint = getClosestPoint(currentCursorPos);
+                } else if (labelMode == 2) {
+                    snapRectangle = getClosestRectangle(currentCursorPos);
+                    if (snapRectangle != null){
+                        Point[] corners = getCorners(snapRectangle);
+                        double minDist = snapBound;
+                        for (int i = 0; i < corners.length; i++){
+                            double d = currentCursorPos.distance(corners[i]);
+                            if (d < minDist){
+                                minDist = d;
+                                snapRectangleCorner = i;
+                            }
+                        }
+                        newSnapPoint = corners[snapRectangleCorner];
+                    }
+                }
                 if (newSnapPoint != null && snapPoint == null || newSnapPoint == null && snapPoint != null) {
                     snapPoint = newSnapPoint;
                     repaint();
@@ -1399,8 +1702,14 @@ public class ClicklableMain {
                         repaint();
                     }
                 }
-
             }
+        }
+        
+        @Override
+        public void mouseMoved(MouseEvent e) {
+            updateCursorPosInfo(e.getPoint());
+            updateSnapPoint();
+            repaint();
         }
 
         @Override
